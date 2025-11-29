@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>맛집 검색 프로그램</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .animate-spin {
+            animation: spin 1s linear infinite;
+        }
+    </style>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-orange-50 to-red-50 p-6">
+    <div class="max-w-6xl mx-auto">
+        <!-- 헤더 -->
+        <div class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-gray-800 mb-2 flex items-center justify-center gap-2">
+                <svg class="text-orange-500" width="36" height="36" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2">
+                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                </svg>
+                맛집 검색
+            </h1>
+            <p class="text-gray-600">지역(동)을 입력하고 주변 맛집을 찾아보세요</p>
+        </div>
+
+        <!-- 검색 바 -->
+        <div class="bg-white rounded-2xl shadow-lg p-6 mb-8">
+            <div class="flex gap-3">
+                <div class="flex-1 relative">
+                    <svg class="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                        <circle cx="12" cy="10" r="3"></circle>
+                    </svg>
+                    <input
+                        type="text"
+                        id="locationInput"
+                        placeholder="예: 역삼동, 강남구, 종로구..."
+                        class="w-full pl-12 pr-4 py-4 border-2 border-gray-200 rounded-xl focus:border-orange-500 focus:outline-none text-lg"
+                    />
+                </div>
+                <button
+                    id="searchBtn"
+                    class="bg-orange-500 hover:bg-orange-600 text-white px-8 py-4 rounded-xl font-semibold flex items-center gap-2 transition-colors"
+                >
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <path d="m21 21-4.35-4.35"></path>
+                    </svg>
+                    검색
+                </button>
+            </div>
+            <div id="statusMsg" class="mt-4 p-3 rounded-lg text-sm hidden"></div>
+        </div>
+
+        <!-- 검색 결과 -->
+        <div id="resultsContainer"></div>
+    </div>
+
+    <script>
+        let restaurants = [];
+        let currentLocation = '';
+
+        const locationInput = document.getElementById('locationInput');
+        const searchBtn = document.getElementById('searchBtn');
+        const resultsContainer = document.getElementById('resultsContainer');
+        const statusMsg = document.getElementById('statusMsg');
+
+        // Enter 키 이벤트
+        locationInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                searchRestaurants();
+            }
+        });
+
+        // 검색 버튼 클릭
+        searchBtn.addEventListener('click', searchRestaurants);
+
+        function showStatus(message, type = 'info') {
+            statusMsg.textContent = message;
+            statusMsg.className = 'mt-4 p-3 rounded-lg text-sm';
+            
+            if (type === 'error') {
+                statusMsg.classList.add('bg-red-100', 'text-red-800');
+            } else if (type === 'success') {
+                statusMsg.classList.add('bg-green-100', 'text-green-800');
+            } else {
+                statusMsg.classList.add('bg-blue-100', 'text-blue-800');
+            }
+            
+            statusMsg.classList.remove('hidden');
+        }
+
+        function hideStatus() {
+            statusMsg.classList.add('hidden');
+        }
+
+        async function searchRestaurants() {
+            const location = locationInput.value.trim();
+            
+            if (!location) {
+                alert('지역(동)을 입력해주세요.');
+                return;
+            }
+
+            currentLocation = location;
+            setLoading(true);
+            hideStatus();
+
+            try {
+                showStatus('🔍 맛집 정보를 검색하고 있습니다...', 'info');
+
+                const response = await fetch('https://api.anthropic.com/v1/messages', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        model: 'claude-sonnet-4-20250514',
+                        max_tokens: 4000,
+                        messages: [
+                            {
+                                role: 'user',
+                                content: `${location} 지역의 유명한 맛집 10곳을 검색해서 다음 정보를 제공해주세요:
+1. 음식점 이름
+2. 평점 (5점 만점, 소수점 1자리)
+3. 음식 카테고리 (한식/양식/일식/중식/고기/아시안 등)
+4. 주소
+5. 긍정적인 리뷰 3-4개 (간단하게)
+6. 인기 메뉴
+
+반드시 아래 JSON 형식으로만 응답하고 다른 텍스트는 포함하지 마세요:
+{"restaurants": [{"name": "음식점명", "rating": 4.5, "category": "한식", "address": "전체주소", "reviews": ["리뷰1", "리뷰2", "리뷰3"], "popularMenu": "대표메뉴"}]}`
+                            }
+                        ],
+                        tools: [
+                            {
+                                type: 'web_search_20250305',
+                                name: 'web_search'
+                            }
+                        ]
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`API 응답 오류: ${response.status}`);
+                }
+
+                const data = await response.json();
+                console.log('API 전체 응답:', data);
+                
+                let responseText = '';
+                if (data.content) {
+                    for (const item of data.content) {
+                        if (item.type === 'text') {
+                            responseText += item.text;
+                        }
+                    }
+                }
+
+                console.log('추출된 텍스트:', responseText);
+
+                if (!responseText) {
+                    throw new Error('API 응답이 비어있습니다.');
+                }
+
+                // JSON 파싱 시도
+                const cleanedText = responseText
+                    .replace(/```json\n?/g, '')
+                    .replace(/```\n?/g, '')
+                    .trim();
+                
+                console.log('정제된 텍스트:', cleanedText);
+                
+                const result = JSON.parse(cleanedText);
+                
+                if (result.restaurants && Array.isArray(result.restaurants) && result.restaurants.length > 0) {
+                    restaurants = result.restaurants.sort((a, b) => b.rating - a.rating);
+                    showStatus(`✅ ${restaurants.length}개의 맛집을 찾았습니다!`, 'success');
+                    setTimeout(hideStatus, 3000);
+                } else {
+                    throw new Error('검색 결과가 없습니다.');
+                }
+
+            } catch (error) {
+                console.error('검색 오류:', error);
+                showStatus(`❌ 검색 중 오류가 발생했습니다: ${error.message}`, 'error');
+                
+                // 오류 발생시 빈 결과 표시
+                restaurants = [];
+            } finally {
+                setLoading(false);
+                renderResults();
+            }
+        }
+
+        function setLoading(isLoading) {
+            if (isLoading) {
+                searchBtn.disabled = true;
+                searchBtn.innerHTML = `
+                    <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                    검색중...
+                `;
+            } else {
+                searchBtn.disabled = false;
+                searchBtn.innerHTML = `
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <path d="m21 21-4.35-4.35"></path>
+                    </svg>
+                    검색
+                `;
+            }
+        }
+
+        function renderResults() {
+            if (restaurants.length === 0) {
+                resultsContainer.innerHTML = `
+                    <div class="text-center py-12 bg-white rounded-2xl shadow-lg">
+                        <svg class="mx-auto mb-4 text-gray-400" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="11" cy="11" r="8"></circle>
+                            <path d="m21 21-4.35-4.35"></path>
+                        </svg>
+                        <p class="text-gray-500 text-lg">검색 결과가 없습니다.</p>
+                        <p class="text-gray-400 text-sm mt-2">다른 지역명으로 다시 검색해보세요.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            let html = `
+                <div class="space-y-4">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-2xl font-bold text-gray-800">
+                            <span class="text-orange-500">${currentLocation}</span> 맛집 리스트
+                        </h2>
+                        <div class="flex items-center gap-2 text-gray-600">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline>
+                                <polyline points="17 6 23 6 23 12"></polyline>
+                            </svg>
+                            <span>평점 높은 순 · ${restaurants.length}곳</span>
+                        </div>
+                    </div>
+            `;
+
+            restaurants.forEach((restaurant, index) => {
+                const googleMapsUrl = `https://www.google.com/maps/search/${encodeURIComponent(restaurant.name + ' ' + restaurant.address)}`;
+                const naverMapUrl = `https://map.naver.com/v5/search/${encodeURIComponent(restaurant.name + ' ' + restaurant.address)}`;
+
+                html += `
+                    <div class="bg-white rounded-2xl shadow-lg p-6 hover:shadow-xl transition-shadow">
+                        <div class="flex justify-between items-start mb-4">
+                            <div class="flex-1">
+                                <div class="flex items-center gap-3 mb-2 flex-wrap">
+                                    <span class="text-2xl font-bold text-orange-500">#${index + 1}</span>
+                                    <h3 class="text-2xl font-bold text-gray-800">${restaurant.name}</h3>
+                                    <span class="px-3 py-1 bg-orange-100 text-orange-600 rounded-full text-sm font-semibold">
+                                        ${restaurant.category}
+                                    </span>
+                                </div>
+                                <p class="text-gray-600 flex items-center gap-2 mb-2">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                                        <circle cx="12" cy="10" r="3"></circle>
+                                    </svg>
+                                    ${restaurant.address}
+                                </p>
+                                <p class="text-orange-600 font-semibold">
+                                    🍽️ 인기메뉴: ${restaurant.popularMenu}
+                                </p>
+                            </div>
+                            <div class="flex flex-col items-end gap-2">
+                                <div class="flex items-center gap-2 bg-yellow-50 px-4 py-2 rounded-xl">
+                                    <svg class="text-yellow-500 fill-yellow-500" width="24" height="24" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                                    </svg>
+                                    <span class="text-2xl font-bold text-gray-800">${restaurant.rating.toFixed(1)}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mt-4 pt-4 border-t border-gray-100">
+                            <div class="flex items-center gap-2 mb-3">
+                                <svg class="text-gray-400" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                                </svg>
+                                <h4 class="font-semibold text-gray-700">주요 리뷰</h4>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                ${restaurant.reviews.map(review => `
+                                    <div class="bg-gray-50 rounded-lg p-3 text-sm text-gray-700">
+                                        <span class="text-orange-500 mr-2">✓</span>
+                                        ${review}
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+
+                        <div class="mt-4 flex gap-2">
+                            <a href="${googleMapsUrl}" target="_blank" rel="noopener noreferrer"
+                               class="flex-1 bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-lg flex items-center justify-center gap-2 transition-colors">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                                    <polyline points="15 3 21 3 21 9"></polyline>
+                                    <line x1="10" y1="14" x2="21" y2="3"></line>
+                                </svg>
+                                Google Maps
+                            </a>
+                            <a href="${naverMapUrl}" target="_blank" rel="noopener noreferrer"
+                               class="flex-1 bg-green-500 hover:bg-green-600 text-white py-2 px-4 rounded-lg flex items-center justify-center gap-2 transition-colors">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                                    <polyline points="15 3 21 3 21 9"></polyline>
+                                    <line x1="10" y1="14" x2="21" y2="3"></line>
+                                </svg>
+                                네이버 지도
+                            </a>
+                        </div>
+                    </div>
+                `;
+            });
+
+            html += '</div>';
+            resultsContainer.innerHTML = html;
+        }
+    </script>
+</body>
+</html>
